@@ -19,9 +19,10 @@ function keyUpLogic(e) { bindInput2Held(e, player, false); }
  */
 function bindInput2Held(e, player, isHeld) {
     switch (e.key) {
-        case "a": player.keysHeld.a = isHeld; break;
-        case "d": player.keysHeld.d = isHeld; break;
-        case " ": player.keysHeld.space = isHeld; break;
+        case "ArrowLeft": player.keysHeld.a = isHeld; break;
+        case "ArrowRight": player.keysHeld.d = isHeld; break;
+        case "x": player.keysHeld.run = isHeld; break;
+        case "a": player.keysHeld.space = isHeld; if (player.timeSinceLastJump == 0) { player.isJumping = true; } break;
     }
 }
 
@@ -55,8 +56,11 @@ export class Inputter {
             if (!player.keysHeld.d && player.momentumHorizontal > 0 && player.directionRight) player.decelerate(true);
             else if (!player.keysHeld.a && player.momentumHorizontal > 0 && !player.directionRight) player.decelerate(false);
         
-            // jump when pressing space
-            if (player.keysHeld.space) player.jump();
+            // cap amount that jump() can be called so player cant jump infinitely
+            if (player.keysHeld.space) { 
+                player.spaceCallCounter++
+                if (player.spaceCallCounter < player.MAX_SPACE_CALLS && !player.isJumping) player.jump();
+            }
         }
     }
     /**

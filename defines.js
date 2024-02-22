@@ -62,6 +62,6 @@ export const CANVAS = {
  */
 export const DEBUG = {
     "showTileBorder": false,
-    "showPlayerTilePosition": true,
-    "showFPS": false
+    "showPlayerTilePosition": false,
+    "showFPS": true
 };

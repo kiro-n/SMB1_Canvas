@@ -1,7 +1,7 @@
 import { CANVAS, DEBUG, tileSize } from "./defines.js";
 import { Level, spriteSheet, SPRITES } from "./level.js";
 import { Player, STATS } from "./player.js";
-import { Entities } from "./enemy.js";
+import { Entities } from "./entities.js";
 import { Inputter } from "./inputter.js";
 
 /* ------------ Init ------------ */
@@ -12,8 +12,8 @@ const absHeight = CANVAS.absHeight;
 
 let crntScene = "preLevel";
 
-let PLAYER = new Player(2, 11, 4, 15);
-let LEVEL = new Level("1-1", 500);
+let PLAYER = new Player(2, 12, 4);
+let LEVEL = new Level(500);
 
 const ENTITIES = new Entities();
 const INPUTTER = new Inputter();
@@ -24,9 +24,16 @@ INPUTTER.setUpListeners(PLAYER);
  * @param {string} sceneCode What scene to switch to (currently only "level," "preLevel" & "gameOver")
  */
 export function resetLevel(sceneCode) {
-    PLAYER = new Player(2, 11, 4, 15);
+    PLAYER = new Player(2, 12, 4);
     PLAYER.GRAVITY = 0.5;
-    LEVEL = new Level("1-1", 500);
+
+    for (var column in LEVEL.blocksHit) {
+        for (var row in LEVEL.blocksHit[column]) {
+            levelData[column][row] = LEVEL.blocksHit[column][row]
+        }
+    }
+
+    LEVEL = new Level(500);
 
     ENTITIES.onScreenEnemiesArr = [];
     ENTITIES.checkForMobsPreScroll();
@@ -53,11 +60,15 @@ export const levelData = await fetch("./levelData.json")
         console.error("Unable to fetch data:", error);
     })
 
+export function changeBlock(tileX, tileY, blockId) {
+    levelData[tileX][tileY] = blockId
+}
+
 /* ------------ Frame Clock ------------ */
 
 function update() {
     switch (crntScene) {
-        case "preLevel": preLevelRoutine(); break;
+        case "preLevel": gameOverRoutine(); preLevelRoutine(); break;
         case "level": levelSceneRoutine(); break;
         case "gameOver": gameOverRoutine(); break;
     }
@@ -135,46 +146,89 @@ function levelSceneRoutine() {
     ctx.fillStyle = `rgb(81, 137, 252)`;
     ctx.fillRect(0, 0, absWidth, absHeight);
 
+    const tilingOffset = Math.floor(LEVEL.scrollOffset/tileSize)
+
+    // draw every visible column
+    for (let i=tilingOffset; i<CANVAS.lastColumn+tilingOffset; i++) {
+        LEVEL.drawColumn(i, levelData[i], LEVEL);
+    }
+
     // if debug, draw debug
     if (DEBUG.showTileBorder || DEBUG.showPlayerTilePosition || DEBUG.showFPS) {
         LEVEL.debugDraw(PLAYER);
     }
 
+    drawGUI();
+
+    // draw score if present
+    if (PLAYER.scoreDisplayArr.length > 0) {
+        for (let i=0; i<PLAYER.scoreDisplayArr.length; i++) {
+            PLAYER.scoreDisplayArr[i].count++
+
+            if (PLAYER.scoreDisplayArr[i].count >= 20) {
+                PLAYER.scoreDisplayArr.splice(i, 1);
+                return;
+            }
+
+            ctx.font = '8px SuperMarioBros';
+            ctx.fillText(
+                PLAYER.scoreDisplayArr[i].number, 
+                PLAYER.scoreDisplayArr[i].x - LEVEL.scrollOffset, 
+                PLAYER.scoreDisplayArr[i].y - 30 - PLAYER.scoreDisplayArr[i].count
+            );
+        }
+    }
+
+    // draw enemies and player
+    for (let i=0; i<ENTITIES.onScreenEnemiesArr.length; i++) ENTITIES.onScreenEnemiesArr[i].draw(LEVEL, i);
+    PLAYER.draw(LEVEL);
+
+    // stop all next logic if taking damage, growing or finishing level
+    if (PLAYER.isChangingFormTimeout || PLAYER.finishedLevel) return;
+
+
     // if first frame, check for mobs
     if (!ENTITIES.checkedForEntitiesPreScroll) ENTITIES.checkForMobsPreScroll();
 
     // if new column loaded in, check for mobs
-    const tilingOffset = Math.floor(LEVEL.scrollOffset/tileSize)
     if (tilingOffset != prevTilingOffset) {
         prevTilingOffset = tilingOffset;
         ENTITIES.spawnMobsInColumn(tilingOffset+CANVAS.lastColumn);
     }
 
-    // draw every visible column
-    for (let i=tilingOffset; i<CANVAS.lastColumn+tilingOffset; i++) {
-        LEVEL.drawColumn(i, levelData[i]);
-    }
-
+    // player logic
     if (!PLAYER.dying) {
         PLAYER.dieDetec(LEVEL);
-        PLAYER.collisionDetec(LEVEL);
+        PLAYER.collisionDetec(LEVEL, ENTITIES, PLAYER);
         PLAYER.noClipDetec();
     } else {
         INPUTTER.disableInput()
     }
     PLAYER.gravity();
-    PLAYER.draw(LEVEL);
 
-    drawGUI();
-
-    //console.log(ENTITIES.onScreenEnemiesArr[ENTITIES.onScreenEnemiesArr.length-1].relativePosition.x)
+    // enemy logic
     for (let i=0; i<ENTITIES.onScreenEnemiesArr.length; i++) {
-        ENTITIES.onScreenEnemiesArr[i].move()
-        ENTITIES.onScreenEnemiesArr[i].checkPlayerCollision(PLAYER, LEVEL, ENTITIES);
-
-        ENTITIES.onScreenEnemiesArr[i].draw(LEVEL)
+        if (!ENTITIES.onScreenEnemiesArr[i].dying) {
+            ENTITIES.onScreenEnemiesArr[i].move();
+            ENTITIES.onScreenEnemiesArr[i].gravity();
+            ENTITIES.onScreenEnemiesArr[i].checkPlayerCollision(PLAYER, LEVEL, ENTITIES);
+            ENTITIES.onScreenEnemiesArr[i].checkBlockCollision(LEVEL, ENTITIES);   
+        }
     }
 
+    // power up logic
+    for (let i=0; i<ENTITIES.onScreenPowerUpArr.length; i++) {
+        if (ENTITIES.onScreenPowerUpArr[i].isSpawning) ENTITIES.onScreenPowerUpArr[i].spawnAnim(LEVEL);
+        else {
+            ENTITIES.onScreenPowerUpArr[i].draw(LEVEL);
+            ENTITIES.onScreenPowerUpArr[i].move();
+            ENTITIES.onScreenPowerUpArr[i].gravity();
+            ENTITIES.onScreenPowerUpArr[i].checkPlayerCollision(PLAYER, LEVEL, ENTITIES);
+            if (ENTITIES.onScreenPowerUpArr[i]) ENTITIES.onScreenPowerUpArr[i].checkBlockCollision(LEVEL, ENTITIES); // if statement needed because power up despawns if picked up by player
+        }
+    }
+
+    // scroll logic
     if (PLAYER.absolutePosition.x-LEVEL.scrollOffset >= absWidth/2) PLAYER.scroll(LEVEL)
 
     INPUTTER.checkInput();
@@ -188,6 +242,7 @@ function drawGUI() {
     ctx.font = '15px SuperMarioBros';
     ctx.fillStyle = 'white';
 
+    /* MARIO 000000 */
     ctx.fillText(
         "Mario", 
         absWidth/4 - ctx.measureText("Mario").width - GUI_SHIFT_CONST, 
@@ -200,6 +255,7 @@ function drawGUI() {
         45
     );
 
+    /* O x00 */
     ctx.drawImage(
         spriteSheet, 
         SPRITES["GUI_coin"].x, 
@@ -219,6 +275,7 @@ function drawGUI() {
         45
     );
 
+    /* WORLD 1-1 */
     ctx.fillText(
         "World", 
         absWidth/4*3 - ctx.measureText("World").width - GUI_SHIFT_CONST, 
@@ -230,6 +287,7 @@ function drawGUI() {
         45
     );
 
+    /* TIME 500 */
     ctx.fillText(
         "Time", 
         absWidth - ctx.measureText("Time").width - GUI_SHIFT_CONST, 
@@ -252,10 +310,7 @@ export let FPS = 0;
 // 1sec clock
 setInterval(() => {
     if (LEVEL.time <= 0) {
-        if (!PLAYER.dying) {
-            PLAYER.dieAnimStart();
-        }
-
+        if (!PLAYER.dying) PLAYER.dieAnimStart();
         return;
     }
 
