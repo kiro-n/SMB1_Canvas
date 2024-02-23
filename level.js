@@ -78,6 +78,13 @@ export const SPRITES = {
     154: { x: 614, y: 62 }, // pipe_bottomLeft
     155: { x: 630, y: 62 }, // pipe_bottomRight
 
+    160: { x: 573, y: 102 }, // left pipe top entrance
+    161: { x: 573, y: 118 }, // left pipe bottom entrance
+    162: { x: 589, y: 102 }, // sideways pipe top
+    163: { x: 589, y: 118 }, // sideways pipe bottom
+    164: { x: 614, y: 102 }, // left merging pipe top
+    165: { x: 614, y: 118 }, // left merging pipe bottom
+
 
     "luigi_stand": { x: 191, y: 463 },
         "luigi_stand_l": { x: 309, y: 423 },
@@ -139,9 +146,6 @@ export class Level {
      * @param {string} [levelCode="1-1"] needs to be identical to the index provided in levelData.js
      */
     constructor(time=500, levelCode="1-1") {
-        /**
-         * Not used.
-         */
         this.code = levelCode
 
         /**
@@ -198,6 +202,19 @@ export class Level {
             ctx.font = "15px Arial";
             ctx.fillStyle = "red";
             ctx.fillText(`${FPS}fps`, 10, 60);
+        }
+        if (DEBUG.showSpedometer) {
+            let calcSpeed = Math.floor(Math.sqrt(
+                ((player.momentumVertical+player.jumpForce)*(player.momentumVertical+player.jumpForce)) + 
+                (player.momentumHorizontal*player.momentumHorizontal)
+            )*100)/100
+
+            if (calcSpeed > DEBUG.topSpeed) DEBUG.topSpeed = calcSpeed
+
+            ctx.font = "15px Arial";
+            ctx.fillStyle = "red";
+            ctx.fillText(`${calcSpeed}`, CANVAS.absWidth-60, 60);
+            ctx.fillText(`${DEBUG.topSpeed}`, CANVAS.absWidth-60, 80);
         }
     
         if (DEBUG.showTileBorder || DEBUG.showPlayerTilePosition) {
@@ -325,6 +342,9 @@ export class Level {
 
             // break block if super and its a brick
             if (blockId == 103 && player.super) {
+                if (!this.blocksHit[tileX]) this.blocksHit[tileX] = {}
+                if (!this.blocksHit[tileX][tileY]) this.blocksHit[tileX][tileY] = 103;
+
                 player.scoreAnimStart(player, 50);
                 changeBlock(tileX, tileY, 0);
             }

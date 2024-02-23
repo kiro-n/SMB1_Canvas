@@ -19,7 +19,7 @@ export const STATS = {
 }
 
 /**
- * Returns true if given blockId is solid (either number >=100 or object)
+ * Returns true if given blockId is solid (either number >0 or object)
  * @param {(number | string | object)} blockId 
  * @returns {boolean}
  */
@@ -85,50 +85,6 @@ export class Player {
             "run": false,
             "space": false
         }
-
-
-        /**
-         * Wether player is big or not
-         * @type {boolean}
-         */
-        this.super = false;
-
-        /**
-         * Time after which you flash up/down when picking up/losing Power Up
-         * @type {number}
-         * @readonly
-         */
-        this.GROWING_INTERVAL = 10;
-        /**
-         * Wether or not player is flashing up and down and game is frozen shortly
-         * @type {boolean}
-         */
-        this.isChangingFormTimeout = false;
-        /**
-         * Counts each frame when eiter isChangingFormTimeout or isInvincible is active
-         * @type {number}
-         */
-        this.invincibleCount = 0;
-
-        /**
-         * Wether player is flashing and cannot be hit
-         * @type {boolean}
-         */
-        this.isInvincible = false;
-        /**
-         * Time after which player stops flashing and can get hit again
-         * @type {number}
-         */
-        this.INVINCABILITY_TIME = 80;
-        /**
-         * Time after which to switch invincibleFlashing state (visible or not)
-         */
-        this.FLASHING_INTERVAL = 5;
-        /**
-         * Wether player is visible from flashing
-         * @type {boolean}
-         */
-        this.invincibleFlashing = false;
 
 
         /**
@@ -260,7 +216,7 @@ export class Player {
         /**
          * Last sprite drawn on screen to determine next animation sprite order
          * @type {string}
-         * @alias crntFrame
+         * @alias lastSprite
          */
         this.crntSprite = "luigi_stand";
 
@@ -283,39 +239,36 @@ export class Player {
          * @type {number}
          * @readonly
          */
-        this.DYING_TIMEOUT = 100;
-
-
-        /**
-         * All additional scores which have to be displayed
-         * @type {[{ x: number, y: number, number: number, count: number }]}
-         */
-        this.scoreDisplayArr = [];
-        /**
-         * Enemies killed in a row without hitting the ground
-         * @type {number}
-         */
-        this.successiveKills = 0;
-        /**
-         * Scores which are given when killing them in a row without hitting the ground (see successiveKills)
-         * @type {[ number ]}
-         * @readonly
-         */
-        this.SUCCESSIVE_SCORES = [100, 200, 400, 500, 800, 1000, 2000, 4000, 5000, 8000];
-
-
-        /**
-         * Wether player has touched the flag pole or not
-         * @type {boolean}
-         */
-        this.finishedLevel = false;
-        /**
-         * Because end of game has a lot of sequential steps, use this and switch case to properly time everything
-         * @type {number}
-         */
-        this.finishedLevelAnimStep = 0;
+        this.DYING_TIMEOUT = 100
     }
-    formatSprite() {
+    /**
+     * Compute next player sprite and draw it 
+     * @param {import("level.js").Level} level Level Class defined in ("level.js")
+     */
+    draw(level) {
+        this.walkFrameCount++;
+
+        // perform special sprite logic when dying
+        if (this.dying) {
+            if (this.walkFrameCount >= this.DYING_TIMEOUT) {
+                this.postMortem(level);
+            }
+
+            CANVAS.ctx.drawImage(
+                spriteSheet, 
+                SPRITES["luigi_die"].x, 
+                SPRITES["luigi_die"].y, 
+                16, 
+                16, 
+                this.absolutePosition.x - level.scrollOffset, 
+                this.absolutePosition.y, 
+                tileSize, 
+                tileSize
+            )
+
+            return;
+        }
+
         // jump sprite if in mid air
         if (this.timeSinceLastJump == 0) {
             this.crntSprite = "luigi_jump"
@@ -358,224 +311,17 @@ export class Player {
         let formattedSpriteName = this.crntSprite
         if (!this.directionRight) formattedSpriteName = `${formattedSpriteName}_l`;
 
-        return formattedSpriteName;
-    }
-    drawSuperIfSuper(level, formattedSpriteName) {
-        if (this.super) {
-            CANVAS.ctx.drawImage(
-                spriteSheet, 
-                SPRITES[`super_${formattedSpriteName}_t`].x, 
-                SPRITES[`super_${formattedSpriteName}_t`].y, 
-                16, 
-                16, 
-                this.absolutePosition.x - level.scrollOffset, 
-                this.absolutePosition.y - tileSize, 
-                tileSize, 
-                tileSize
-            )
-            CANVAS.ctx.drawImage(
-                spriteSheet, 
-                SPRITES[`super_${formattedSpriteName}_b`].x, 
-                SPRITES[`super_${formattedSpriteName}_b`].y, 
-                16, 
-                16, 
-                this.absolutePosition.x - level.scrollOffset, 
-                this.absolutePosition.y, 
-                tileSize, 
-                tileSize
-            )
-        } else {
-            CANVAS.ctx.drawImage(
-                spriteSheet, 
-                SPRITES[formattedSpriteName].x, 
-                SPRITES[formattedSpriteName].y, 
-                16, 
-                16, 
-                this.absolutePosition.x - level.scrollOffset, 
-                this.absolutePosition.y, 
-                tileSize, 
-                tileSize
-            )   
-        }
-    }
-    /**
-     * Compute next player sprite and draw it based on states (such as level finished or dying)
-     * @param {import("level.js").Level} level Level Class defined in ("level.js")
-     */
-    draw(level) {
-        this.walkFrameCount++;
-
-        // animation sequence when touching the flag pole
-        if (this.finishedLevel) {
-            const TIME_BEFORE_DECEND = 30;
-            const POLE_REACH_OFFSET = 0.6;
-            const DECEND_SPEED = 2;
-
-            // this part is devided in animation steps: after a count max is reached or other condition is met, then continue to the next
-            // reverse order so everything runs at least once
-            switch (this.finishedLevelAnimStep) {
-                case 4: // in castle
-                    if (this.walkFrameCount > TIME_BEFORE_DECEND) {
-                        resetLevel("preLevel", level.code)
-                    }
-                    return;
-                case 3: // walking towards the castle
-                    if (this.walkFrameCount === 1) {
-                        this.absolutePosition.y = (this.relativePosition.y+1)*tileSize;
-                        this.absolutePosition.x = (this.relativePosition.x+1)*tileSize;
-                    }
-
-                    this.absolutePosition.x++
-
-                    this.equalRel2Abs(true, true);
-
-                    if (this.walkFrameCount%this.WALK_ANIM_SPEED == 0) {
-                        switch (this.crntSprite) {
-                            case "luigi_pole1_l":
-                            case "luigi_pole2_l":
-                                this.crntSprite = "luigi_walk1";
-                                break;
-                            case "luigi_walk1":
-                                this.crntSprite = "luigi_walk2";
-                                break;
-                            case "luigi_walk2":
-                                this.crntSprite = "luigi_walk3";
-                                break;
-                            case "luigi_walk3":
-                                this.crntSprite = "luigi_walk1";
-                                break;
-                        }
-                    } 
-
-                    // when black part of door is behind player: continue to the next step
-                    if (levelData[Math.floor(this.relativePosition.x)][Math.floor(this.relativePosition.y)] === 47) {
-                        this.walkFrameCount = 0;
-                        this.finishedLevelAnimStep++
-                    }
-                    break;
-                case 2: // wait at the bottom of the flag, facing left still
-                    this.crntSprite = "luigi_pole1_l";
-                    if (this.walkFrameCount > TIME_BEFORE_DECEND) {
-                        this.walkFrameCount = 0;
-                        this.finishedLevelAnimStep++
-                    }
-                    break; 
-                case 1: // slide down pole, facing left
-                    if (this.walkFrameCount === 1) { // for the first frame of step: reposition player so it looks nice
-                        this.absolutePosition.x += tileSize * 3/4;
-                        this.isPolePositionCorrected = true;
-                    }
-
-                    this.absolutePosition.y += DECEND_SPEED;
-
-                    this.equalRel2Abs(true, true);
-
-                    if (this.walkFrameCount%this.WALK_ANIM_SPEED == 0) {
-                        if (this.crntSprite == "luigi_pole1_l") this.crntSprite = "luigi_pole2_l";
-                        else this.crntSprite = "luigi_pole1_l"
-                    }
-
-                    // if ground is reached: continue to the next step
-                    if (isSolid(levelData[Math.floor(this.relativePosition.x)][Math.floor(this.relativePosition.y)+1]) ||
-                    isSolid(levelData[Math.ceil(this.relativePosition.x)][Math.floor(this.relativePosition.y)+1])) {
-                        
-                        this.walkFrameCount = 0;
-                        this.finishedLevelAnimStep++
-                    }
-                    break; 
-                case 0: // stick to the pole, facing right
-                    // reposition player so grabbing pole
-                    if (this.walkFrameCount === 1) {
-                        let blockData = levelData[Math.ceil(this.relativePosition.x)][Math.floor(this.relativePosition.y)];
-                        // when player grabs flag from right, offset grabbing offset by one block
-                        if (blockData == 31 || blockData == 32 ||blockData == 34) {
-                            this.absolutePosition.x = (Math.floor(this.relativePosition.x) + POLE_REACH_OFFSET)*tileSize;
-                        } else {
-                            blockData = levelData[Math.ceil(this.relativePosition.x-1)][Math.floor(this.relativePosition.y)];
-                            if (blockData == 31 || blockData == 32 ||blockData == 34) {
-                                this.absolutePosition.x = (Math.floor(this.relativePosition.x) + POLE_REACH_OFFSET - 1)*tileSize;
-                            }
-                        }   
-                    }
-
-                    this.crntSprite = "luigi_pole1"
-
-                    if (this.walkFrameCount > TIME_BEFORE_DECEND) {
-                        this.walkFrameCount = 0;
-                        this.finishedLevelAnimStep++
-                    }
-                    break; 
-            }
-
-            CANVAS.ctx.drawImage(
-                spriteSheet, 
-                SPRITES[this.crntSprite].x, 
-                SPRITES[this.crntSprite].y, 
-                16, 
-                16, 
-                this.absolutePosition.x - level.scrollOffset, 
-                this.absolutePosition.y, 
-                tileSize, 
-                tileSize
-            )
-
-            return;
-        }
-        // flash player if invincible frames are active
-        else if (this.isInvincible) {
-            this.invincibleCount++
-
-            if (this.invincibleCount%this.FLASHING_INTERVAL == 0) this.invincibleFlashing = !this.invincibleFlashing;
-
-            if (this.invincibleCount >= this.INVINCABILITY_TIME) {
-                this.isInvincible = false;
-                this.invincibleCount = 0;
-            }
-
-            // draw player if currently in flashing
-            if (this.invincibleFlashing) this.drawSuperIfSuper(level, this.formatSprite())
-        }
-        // pause everything and show growing/shrinking of player
-        else if (this.isChangingFormTimeout) {
-            this.invincibleCount++
-
-            if (this.invincibleCount%this.GROWING_INTERVAL == 0) this.super = !this.super;
-
-            if (this.invincibleCount >= 5*this.GROWING_INTERVAL) {
-                this.isChangingFormTimeout = false;
-                this.invincibleCount = 0;
-                this.isInvincible = true;
-
-                return;
-            }
-
-            let formattedSpriteName = "luigi_stand";
-            if (!this.directionRight) formattedSpriteName += "_l";
-
-            this.drawSuperIfSuper(level, formattedSpriteName);
-        }
-        // perform special sprite logic when dying
-        else if (this.dying) {
-            if (this.walkFrameCount >= this.DYING_TIMEOUT) {
-                this.postMortem(level);
-            }
-
-            CANVAS.ctx.drawImage(
-                spriteSheet, 
-                SPRITES["luigi_die"].x, 
-                SPRITES["luigi_die"].y, 
-                16, 
-                16, 
-                this.absolutePosition.x - level.scrollOffset, 
-                this.absolutePosition.y, 
-                tileSize, 
-                tileSize
-            )
-        }
-        // follow default logic if no other states are active
-        else {
-            this.drawSuperIfSuper(level, this.formatSprite())
-        }
+        CANVAS.ctx.drawImage(
+            spriteSheet, 
+            SPRITES[formattedSpriteName].x, 
+            SPRITES[formattedSpriteName].y, 
+            16, 
+            16, 
+            this.absolutePosition.x - level.scrollOffset, 
+            this.absolutePosition.y, 
+            tileSize, 
+            tileSize
+        )
     }
     /**
      * Smoothly increase player speed until player reaches MAX_SPEED
@@ -615,13 +361,7 @@ export class Player {
      * Check collision of the borders and the tiles in each cardinal direction
      * @param {import("level.js").Level} level Level Class defined in ("level.js")
      */
-    collisionDetec(level, entities, player) {
-        const centerBlock = levelData[Math.floor(this.relativePosition.x+0.5)][Math.floor(this.relativePosition.y)];
-        if (centerBlock == 31 || centerBlock == 32 || centerBlock == 34) {
-            this.finishedLevel = true;
-            this.walkFrameCount = 0;
-        }
-
+    collisionDetec(level, entities) {
         /* Borders */
 
         // if relative position is on first column
@@ -651,30 +391,18 @@ export class Player {
         /* Cardinal Directions */
 
         // if tile above player is solid
-        if (this.super && isSolid(levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)-1]) ||
-            isSolid(levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)])) {
+        if (isSolid(levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)])) {
             this.momentumVertical = 0;
             this.jumpForce *= -1;
             this.isJumpClimax = true;
             this.absolutePosition.y = (Math.floor(this.relativePosition.y)+1)*tileSize;
 
-            if (this.super) {
-                level.blockHitLogic(
-                    Math.round(this.relativePosition.x), 
-                    Math.floor(this.relativePosition.y-1), 
-                    levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)-1],
-                    entities,
-                    player
-                )
-            } else {
-                level.blockHitLogic(
-                    Math.round(this.relativePosition.x), 
-                    Math.floor(this.relativePosition.y), 
-                    levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)],
-                    entities,
-                    player
-                )
-            }
+            level.blockHitLogic(
+                Math.round(this.relativePosition.x), 
+                Math.floor(this.relativePosition.y), 
+                levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)],
+                entities
+            )
             
             this.equalRel2Abs(false, true);
         }
@@ -694,12 +422,7 @@ export class Player {
                 this.equalRel2Abs(true, false);
             }
             // if tile below player is solid
-            if (isSolid(levelData[Math.floor(this.relativePosition.x)][Math.floor(this.relativePosition.y)+1]) ||
-            isSolid(levelData[Math.ceil(this.relativePosition.x)][Math.floor(this.relativePosition.y)+1])) {
-                if (this.timeSinceLastJump == 0 && !isSolid(levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)+1])) return;
-                
-                if (this.successiveKills > 0) this.successiveKills = 0;
-
+            if (isSolid(levelData[Math.round(this.relativePosition.x)][Math.floor(this.relativePosition.y)+1])) {
                 this.momentumVertical = 0;
                 this.absolutePosition.y = (Math.floor(this.relativePosition.y))*tileSize;
 
@@ -779,20 +502,11 @@ export class Player {
 
         level.scrollOffset += this.momentumHorizontal;
     }
-    scoreAnimStart(player, score) {
-        this.scoreDisplayArr.push({ 
-            x: player.absolutePosition.x, 
-            y: player.absolutePosition.y, 
-            number: score,
-            count: 0
-        })
-        STATS.score += score;
-    }
     /**
      * Detect if player fell into the void
      */
-    dieDetec(level) {
-        if (this.absolutePosition.y > CANVAS.absHeight) this.postMortem(level)
+    dieDetec() {
+        if (this.absolutePosition.y > CANVAS.absHeight) this.postMortem()
     }
     /**
      * Starts the death process by setting this.dying = true and similar
@@ -814,7 +528,7 @@ export class Player {
      * Play new scenes accourding to lives count, resets Level attributes if necessary
      * @summary Adds afer death logic
      */
-    postMortem(level) {
+    postMortem() {
         this.dying = false;
 
         if (STATS.lives == 0) {
@@ -824,7 +538,7 @@ export class Player {
         }
 
         STATS.lives--
-        resetLevel("preLevel", level.code)
+        resetLevel("preLevel")
     }
     /**
      * Update @type {{ x: number, y: number }} this.relativePosition to equal @type {{ x: number, y: number }} this.absolutePosition

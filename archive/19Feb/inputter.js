@@ -1,5 +1,3 @@
-import { changeLevelData, toggleDebug } from "./main.js";
-
 /**
  * Event listener function that cannot, as typically done in this project, be an anonymous function because of removeEventListener()
  * @param {EventListener} e Default Event Listener Object
@@ -10,8 +8,6 @@ function keyDownLogic(e) { bindInput2Held(e, player, true); }
  * @param {EventListener} e Default Event Listener Object
  */
 function keyUpLogic(e) { bindInput2Held(e, player, false); }
-
-let actualInvinceTime = 80;
 
 /**
  * Binding logic for key presses and player.keysHeld
@@ -27,34 +23,6 @@ function bindInput2Held(e, player, isHeld) {
         case "ArrowRight": player.keysHeld.d = isHeld; break;
         case "x": player.keysHeld.run = isHeld; break;
         case "a": player.keysHeld.space = isHeld; if (player.timeSinceLastJump == 0) { player.isJumping = true; } break;
-        
-        case "5": 
-            if (!isHeld) changeLevelData("1-TEST"); 
-            break;
-        case "u":
-            if (!isHeld) toggleDebug("showTileBorder"); 
-            break;
-        case "i":
-            if (!isHeld) toggleDebug("showPlayerTilePosition"); 
-            break;
-        case "o":
-            if (!isHeld) toggleDebug("showFPS"); 
-            break;
-        case "p":
-            if (!isHeld) toggleDebug("showSpedometer"); 
-            break;
-        case "Backspace":
-            if (!isHeld) {
-                if (player.isInvincible) {
-                    player.INVINCABILITY_TIME = actualInvinceTime;
-                    player.isInvincible = false;
-                } else {
-                    actualInvinceTime = player.INVINCABILITY_TIME
-                    player.INVINCABILITY_TIME = 1000000;
-                    player.isInvincible = true;
-                }  
-            } 
-            break;
     }
 }
 

@@ -1,7 +1,7 @@
 import { CANVAS, DEBUG, tileSize } from "./defines.js";
 import { Level, spriteSheet, SPRITES } from "./level.js";
 import { Player, STATS } from "./player.js";
-import { Entities } from "./entities.js";
+import { Entities } from "./enemy.js";
 import { Inputter } from "./inputter.js";
 
 /* ------------ Init ------------ */
@@ -12,8 +12,8 @@ const absHeight = CANVAS.absHeight;
 
 let crntScene = "preLevel";
 
-let PLAYER = new Player(2, 12, 4);
-let LEVEL = new Level(500, "1-1");
+let PLAYER = new Player(2, 11, 4);
+let LEVEL = new Level("1-1", 500);
 
 const ENTITIES = new Entities();
 const INPUTTER = new Inputter();
@@ -23,17 +23,17 @@ INPUTTER.setUpListeners(PLAYER);
  * Resets all vital data in the game outside of STATS
  * @param {string} sceneCode What scene to switch to (currently only "level," "preLevel" & "gameOver")
  */
-export function resetLevel(sceneCode, levelCode) {
-    PLAYER = new Player(2, 12, 4);
+export function resetLevel(sceneCode) {
+    PLAYER = new Player(2, 11, 4);
     PLAYER.GRAVITY = 0.5;
 
-    for (var column in LEVEL.blocksHit) {
-        for (var row in LEVEL.blocksHit[column]) {
-            levelData[column][row] = LEVEL.blocksHit[column][row]
+    for (var column in LEVEL.hitBlocksPre) {
+        for (var row in LEVEL.hitBlocksPre[column]) {
+            levelData[column][row] = LEVEL.hitBlocksPre[column][row]
         }
     }
 
-    LEVEL = new Level(500, levelCode);
+    LEVEL = new Level("1-1", 500);
 
     ENTITIES.onScreenEnemiesArr = [];
     ENTITIES.checkForMobsPreScroll();
@@ -45,7 +45,7 @@ export function resetLevel(sceneCode, levelCode) {
 
 /* ------------ Fetch ------------ */
 
-export let levelData = await fetch("./levelData.json")
+export const levelData = await fetch("./levelData.json")
     .then(res => {
         if (!res.ok) {
             throw new Error
@@ -60,52 +60,6 @@ export let levelData = await fetch("./levelData.json")
         console.error("Unable to fetch data:", error);
     })
 
-/**
- * Changes levelData to newly specified key 
- * @param {string} identifier What key to look for in levelData.json
- */
-export function changeLevelData(identifier="1-1") {
-    fetch("./levelData.json")
-        .then(res => {
-            if (!res.ok) {
-                throw new Error
-                    (`HTTP error! Status: ${res.status}`);
-            }
-            return res.json();
-        })
-        .then(data => {
-            levelData = data[identifier];
-            resetLevel("preLevel", identifier)
-        })
-        .catch(error => {
-            console.error("Unable to fetch data:", error);
-        })
-}
-/**
- * Toggles specified DEBUG key to display/remove debug info 
- * @param {string} type What key of DEBUG to change
- */
-export function toggleDebug(type) {
-    if (DEBUG[type] === undefined) {
-        let formattedStr = "DEBUG does not support specified argument. Only "
-        Object.keys(DEBUG).forEach(key => {
-            if (typeof(DEBUG[key]) === "boolean") {
-                formattedStr += key + " ";
-            }
-        })
-        formattedStr += "are supported."
-        throw new Error(formattedStr);
-    }
-
-    DEBUG[type] = !DEBUG[type]
-    console.log(`${type}: ${DEBUG[type]}`)
-}
-/**
- * Changes a block in levelData (changes need to be reset with level.blocksHit)
- * @param {number} tileX "relativePosition.x" of block
- * @param {number} tileY "relativePosition.y" of block
- * @param {(number | object)} blockId New data of block
- */
 export function changeBlock(tileX, tileY, blockId) {
     levelData[tileX][tileY] = blockId
 }
@@ -151,10 +105,9 @@ function preLevelRoutine() {
     // display level code
     ctx.font = '15px SuperMarioBros';
     ctx.fillStyle = 'white';
-
     ctx.fillText(
-        `World ${LEVEL.code}`, 
-        absWidth/2 - ctx.measureText(`World ${LEVEL.code}`).width/2, 
+        "World 1-1", 
+        absWidth/2 - ctx.measureText("World 1-1").width/2, 
         absHeight/2-20
     );
 
@@ -193,67 +146,38 @@ function levelSceneRoutine() {
     ctx.fillStyle = `rgb(81, 137, 252)`;
     ctx.fillRect(0, 0, absWidth, absHeight);
 
+    // if debug, draw debug
+    if (DEBUG.showTileBorder || DEBUG.showPlayerTilePosition || DEBUG.showFPS) {
+        LEVEL.debugDraw(PLAYER);
+    }
+
+    // if first frame, check for mobs
+    if (!ENTITIES.checkedForEntitiesPreScroll) ENTITIES.checkForMobsPreScroll();
+
+    // if new column loaded in, check for mobs
     const tilingOffset = Math.floor(LEVEL.scrollOffset/tileSize)
+    if (tilingOffset != prevTilingOffset) {
+        prevTilingOffset = tilingOffset;
+        ENTITIES.spawnMobsInColumn(tilingOffset+CANVAS.lastColumn);
+    }
 
     // draw every visible column
     for (let i=tilingOffset; i<CANVAS.lastColumn+tilingOffset; i++) {
         LEVEL.drawColumn(i, levelData[i], LEVEL);
     }
 
-    // if debug, draw debug
-    if (DEBUG.showTileBorder || DEBUG.showPlayerTilePosition || DEBUG.showFPS || DEBUG.showSpedometer) {
-        LEVEL.debugDraw(PLAYER);
-    }
-
-    drawGUI();
-
-    // draw score if present
-    if (PLAYER.scoreDisplayArr.length > 0) {
-        for (let i=0; i<PLAYER.scoreDisplayArr.length; i++) {
-            PLAYER.scoreDisplayArr[i].count++
-
-            if (PLAYER.scoreDisplayArr[i].count >= 20) {
-                PLAYER.scoreDisplayArr.splice(i, 1);
-                return;
-            }
-
-            ctx.font = '8px SuperMarioBros';
-            ctx.fillText(
-                PLAYER.scoreDisplayArr[i].number, 
-                PLAYER.scoreDisplayArr[i].x - LEVEL.scrollOffset, 
-                PLAYER.scoreDisplayArr[i].y - 30 - PLAYER.scoreDisplayArr[i].count
-            );
-        }
-    }
-
-    // draw enemies and player
-    for (let i=0; i<ENTITIES.onScreenEnemiesArr.length; i++) ENTITIES.onScreenEnemiesArr[i].draw(LEVEL, i);
-    PLAYER.draw(LEVEL);
-
-    // stop all next logic if taking damage, growing or finishing level
-    if (PLAYER.isChangingFormTimeout || PLAYER.finishedLevel) return;
-
-
-    // if first frame, check for mobs
-    if (!ENTITIES.checkedForEntitiesPreScroll) ENTITIES.checkForMobsPreScroll();
-
-    // if new column loaded in, check for mobs
-    if (tilingOffset != prevTilingOffset) {
-        prevTilingOffset = tilingOffset;
-        ENTITIES.spawnMobsInColumn(tilingOffset+CANVAS.lastColumn);
-    }
-
-    // player logic
     if (!PLAYER.dying) {
         PLAYER.dieDetec(LEVEL);
-        PLAYER.collisionDetec(LEVEL, ENTITIES, PLAYER);
+        PLAYER.collisionDetec(LEVEL, ENTITIES);
         PLAYER.noClipDetec();
     } else {
         INPUTTER.disableInput()
     }
     PLAYER.gravity();
+    PLAYER.draw(LEVEL);
 
-    // enemy logic
+    drawGUI();
+
     for (let i=0; i<ENTITIES.onScreenEnemiesArr.length; i++) {
         if (!ENTITIES.onScreenEnemiesArr[i].dying) {
             ENTITIES.onScreenEnemiesArr[i].move();
@@ -261,21 +185,10 @@ function levelSceneRoutine() {
             ENTITIES.onScreenEnemiesArr[i].checkPlayerCollision(PLAYER, LEVEL, ENTITIES);
             ENTITIES.onScreenEnemiesArr[i].checkBlockCollision(LEVEL, ENTITIES);   
         }
+
+        ENTITIES.onScreenEnemiesArr[i].draw(LEVEL, i);
     }
 
-    // power up logic
-    for (let i=0; i<ENTITIES.onScreenPowerUpArr.length; i++) {
-        if (ENTITIES.onScreenPowerUpArr[i].isSpawning) ENTITIES.onScreenPowerUpArr[i].spawnAnim(LEVEL);
-        else {
-            ENTITIES.onScreenPowerUpArr[i].draw(LEVEL);
-            ENTITIES.onScreenPowerUpArr[i].move();
-            ENTITIES.onScreenPowerUpArr[i].gravity();
-            ENTITIES.onScreenPowerUpArr[i].checkPlayerCollision(PLAYER, LEVEL, ENTITIES);
-            if (ENTITIES.onScreenPowerUpArr[i]) ENTITIES.onScreenPowerUpArr[i].checkBlockCollision(LEVEL, ENTITIES); // if statement needed because power up despawns if picked up by player
-        }
-    }
-
-    // scroll logic
     if (PLAYER.absolutePosition.x-LEVEL.scrollOffset >= absWidth/2) PLAYER.scroll(LEVEL)
 
     INPUTTER.checkInput();
@@ -289,7 +202,6 @@ function drawGUI() {
     ctx.font = '15px SuperMarioBros';
     ctx.fillStyle = 'white';
 
-    /* MARIO 000000 */
     ctx.fillText(
         "Mario", 
         absWidth/4 - ctx.measureText("Mario").width - GUI_SHIFT_CONST, 
@@ -302,7 +214,6 @@ function drawGUI() {
         45
     );
 
-    /* O x00 */
     ctx.drawImage(
         spriteSheet, 
         SPRITES["GUI_coin"].x, 
@@ -322,7 +233,6 @@ function drawGUI() {
         45
     );
 
-    /* WORLD 1-1 */
     ctx.fillText(
         "World", 
         absWidth/4*3 - ctx.measureText("World").width - GUI_SHIFT_CONST, 
@@ -334,7 +244,6 @@ function drawGUI() {
         45
     );
 
-    /* TIME 500 */
     ctx.fillText(
         "Time", 
         absWidth - ctx.measureText("Time").width - GUI_SHIFT_CONST, 
@@ -344,7 +253,7 @@ function drawGUI() {
         let formattedTime = String(LEVEL.time).padStart(3, '0');
         ctx.fillText(
             formattedTime, 
-            absWidth - ctx.measureText(500).width - GUI_SHIFT_CONST, 
+            absWidth - ctx.measureText(LEVEL.time).width - GUI_SHIFT_CONST, 
             45
         );
     }
@@ -357,7 +266,10 @@ export let FPS = 0;
 // 1sec clock
 setInterval(() => {
     if (LEVEL.time <= 0) {
-        if (!PLAYER.dying) PLAYER.dieAnimStart();
+        if (!PLAYER.dying) {
+            PLAYER.dieAnimStart();
+        }
+
         return;
     }
 
